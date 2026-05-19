@@ -57,6 +57,9 @@ const yearSubsTotal = document.getElementById("yearSubsTotal");
 const yearPersonalTotal = document.getElementById("yearPersonalTotal");
 const yearChargesTotal = document.getElementById("yearChargesTotal");
 const yearRemaining = document.getElementById("yearRemaining");
+const exportBtn = document.getElementById("exportBtn");
+const importBtn = document.getElementById("importBtn");
+const importFileInput = document.getElementById("importFileInput");
 
 const MONTH_LABELS = [
   "Janvier", "Fevrier", "Mars", "Avril", "Mai", "Juin",
@@ -193,13 +196,25 @@ function sanitizeMonthData(data) {
 
 function sanitizeGoals(goals) {
   if (!Array.isArray(goals)) return [];
-  return goals.map((goal) => ({
-    id: goal.id || `goal_${Date.now()}_${Math.random().toString(16).slice(2)}`,
-    name: (goal.name || "").trim(),
-    target: toNumber(goal.target),
-    contributions: goal.contributions && typeof goal.contributions === "object" ? goal.contributions : {},
-    closed: Boolean(goal.closed)
-  })).filter((goal) => goal.name && goal.target > 0);
+  return goals.map((goal) => {
+    const contributions = goal.contributions && typeof goal.contributions === "object" ? goal.contributions : {};
+    const closed = Boolean(goal.closed);
+    let closedMonth = goal.closedMonth || null;
+    if (closed && !closedMonth) {
+      const months = Object.keys(contributions).filter((m) => typeof m === "string");
+      if (months.length > 0) {
+        closedMonth = months.sort().pop();
+      }
+    }
+    return {
+      id: goal.id || `goal_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+      name: (goal.name || "").trim(),
+      target: toNumber(goal.target),
+      contributions,
+      closed,
+      closedMonth
+    };
+  }).filter((goal) => goal.name && goal.target > 0);
 }
 
 function loadStore() {
@@ -220,10 +235,48 @@ function saveStore() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
 }
 
+function exportStore() {
+  try {
+    const data = localStorage.getItem(STORAGE_KEY) || JSON.stringify(store);
+    const blob = new Blob([data], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const now = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+    a.href = url;
+    a.download = `budget_perso_backup_${now}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    alert("Erreur pendant l'export : " + err.message);
+  }
+}
+
+function handleImportFile(e) {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const text = reader.result;
+      const parsed = JSON.parse(text);
+      if (!parsed || typeof parsed !== "object") throw new Error("Fichier invalide");
+      if (!confirm("Importer ce fichier remplacera les données locales. Continuer ?")) return;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+      alert("Import terminé. La page va se recharger.");
+      location.reload();
+    } catch (err) {
+      alert("Erreur lors de l'import : " + err.message);
+    }
+  };
+  reader.readAsText(file);
+  importFileInput.value = "";
+}
+
 function ensureMonth(monthKey) {
   if (!store.monthsData[monthKey]) {
     store.monthsData[monthKey] = copyMonthDefaults();
-    syncChargesToMonth(monthKey);
   }
 }
 
@@ -264,7 +317,6 @@ function createItemElement(item, onRemove, groupKey) {
       const newVal = toNumber(editInput.value);
       if (newVal <= 0) return;
       item.amount = newVal;
-      updateChargeAcrossMonths(item);
       saveStore();
       renderAll();
     });
@@ -308,11 +360,7 @@ function renderItems(listEl, items, groupKey) {
   listEl.innerHTML = "";
   items.forEach((item, index) => {
     listEl.appendChild(createItemElement(item, () => {
-      if (groupKey === "chargesItems") {
-        removeChargeFromAllMonths(item.id, item.name);
-      } else {
-        month[groupKey].splice(index, 1);
-      }
+      month[groupKey].splice(index, 1);
       saveStore();
       renderAll();
     }, groupKey));
@@ -535,8 +583,28 @@ function renderGoal(goal) {
 
   const totalSaved = sumGoalContrib(goal);
   const progress = Math.min(100, goal.target > 0 ? (totalSaved / goal.target) * 100 : 0);
-  const closed = goal.closed || totalSaved >= goal.target;
-  if (closed) goal.closed = true;
+  const wasClosed = Boolean(goal.closed);
+  const closed = totalSaved >= goal.target;
+  let stateChanged = false;
+
+  if (closed) {
+    if (!goal.closed) {
+      goal.closed = true;
+      stateChanged = true;
+    }
+    if (!goal.closedMonth) {
+      goal.closedMonth = store.activeMonth;
+      stateChanged = true;
+    }
+  } else if (goal.closed) {
+    goal.closed = false;
+    goal.closedMonth = null;
+    stateChanged = true;
+  }
+
+  if (stateChanged) {
+    saveStore();
+  }
 
   status.textContent = `${toMoney(totalSaved)} / ${toMoney(goal.target)}${closed ? " · Cloture" : ""}`;
   top.appendChild(title);
@@ -613,7 +681,13 @@ function renderGoal(goal) {
 
 function renderGoals() {
   goalsList.innerHTML = "";
-  store.goals.forEach((goal) => goalsList.appendChild(renderGoal(goal)));
+  store.goals
+    .filter((goal) => {
+      if (!goal.closed) return true;
+      if (!goal.closedMonth) return true;
+      return store.activeMonth <= goal.closedMonth;
+    })
+    .forEach((goal) => goalsList.appendChild(renderGoal(goal)));
 }
 
 function renderMonthsPreview() {
@@ -741,7 +815,7 @@ function addItem(nameInput, valueInput, groupKey) {
   const entry = { name, amount };
   if (groupKey === "chargesItems") {
     entry.id = generateId("charge");
-    replicateChargesToAllMonths(entry);
+    month[groupKey].push(entry);
   } else {
     month[groupKey].push(entry);
     if (groupKey === "subsItems") {
@@ -931,6 +1005,11 @@ addChargesBtn.addEventListener("click", () => addItem(chargesNameInput, chargesV
 addGoalBtn.addEventListener("click", addGoal);
 addDetailBtn?.addEventListener("click", addPersonalDetail);
 closePersonalDetail?.addEventListener("click", closePersonalDetailView);
+
+// Export / Import handlers
+exportBtn?.addEventListener("click", exportStore);
+importBtn?.addEventListener("click", () => importFileInput?.click());
+importFileInput?.addEventListener("change", handleImportFile);
 
 window.addEventListener("beforeinstallprompt", (event) => {
   event.preventDefault();

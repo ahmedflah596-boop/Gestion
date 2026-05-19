@@ -14,8 +14,7 @@ Application de budget personnel installable comme PWA.
 2. Sur ton PC, dans `src/` :
    ```bash
    git remote add origin https://github.com/TON_UTILISATEUR/NOM_DU_DEPOT.git
-   git branch -M main
-   git push -u origin main
+   git push -u origin master
    ```
 3. Dans GitHub, va dans `Settings` → `Pages`.
 4. Sélectionne la branche `main` et le dossier `/`.
