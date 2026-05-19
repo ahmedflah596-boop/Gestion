@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0b57d0" />
+  <title>Budget Perso</title>
+  <meta name="description" content="Application de gestion de budget personnel en dirham marocain" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="./icon-192.png" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="bg-orb bg-orb--1"></div>
+  <div class="bg-orb bg-orb--2"></div>
+  <main class="app">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Finance Personnelle</p>
+        <h1>Budget Perso 2026</h1>
+      </div>
+      <button id="installBtn" class="btn" hidden>Installer</button>
+    </header>
+
+    <section class="card glass">
+      <div class="page-header">
+        <div>
+          <p class="page-tag">Application de gestion simple et claire.</p>
+          <h2 id="pageTitle">Salaire</h2>
+        </div>
+        <p class="page-subtitle">Gère ton budget mois par mois.</p>
+      </div>
+
+      <div class="month-switcher">
+        <label class="field-label" for="monthSelect">Mois de suivi</label>
+        <select id="monthSelect"></select>
+      </div>
+
+      <div class="panel is-active" data-panel="salaire">
+        <div class="section-card">
+          <h3>Salaire</h3>
+          <p class="hint">Indique ton revenu mensuel net et tes revenus extras.</p>
+          <label class="field-label" for="salaryInput">Salaire mensuel (MAD)</label>
+          <input id="salaryInput" type="number" min="0" step="0.01" placeholder="Ex: 10000" />
+          <label class="field-label" for="incomeInput">Revenus hors salaire (MAD)</label>
+          <input id="incomeInput" type="number" min="0" step="0.01" placeholder="Ex: 1500" />
+        </div>
+      </div>
+
+      <div class="panel" data-panel="abonnements">
+        <div class="section-card">
+          <h3>Abonnements</h3>
+          <p class="hint">Enregistre les services et leurs montants mensuels. Ils se répercutent automatiquement sur tous les mois.</p>
+          <div class="entry-form">
+            <input id="subsNameInput" type="text" placeholder="Nom abonnement (Netflix, Spotify...)" />
+            <input id="subsValueInput" type="number" min="0" step="0.01" placeholder="Montant MAD" />
+            <button id="addSubsBtn" class="btn btn-small" type="button">Ajouter</button>
+          </div>
+          <ul id="subsList" class="list"></ul>
+        </div>
+      </div>
+
+      <div class="panel" data-panel="besoins">
+        <div class="section-card">
+          <h3>Besoins personnels</h3>
+          <p class="hint">Contrôle ton budget pour nourriture, transport et extras. Les besoins Coffee, Fun, Food, Marjane, Clothes et Transport sont déjà présents pour tous les mois.</p>
+          <label class="field-label" for="personalBudgetInput">Budget total besoins (MAD)</label>
+          <input id="personalBudgetInput" type="number" min="0" step="0.01" placeholder="Ex: 2500" />
+          <div class="budget-status">
+            <span>Alloué: <strong id="personalAllocated">0 MAD</strong></span>
+            <span>Reste: <strong id="personalUnallocated">0 MAD</strong></span>
+          </div>
+          <p id="personalAlert" class="alert" hidden>Attention : le total des sous-besoins dépasse le budget.</p>
+          <div class="entry-form">
+            <input id="personalNameInput" type="text" placeholder="Nom sous-besoin (Food, Coffee...)" />
+            <input id="personalValueInput" type="number" min="0" step="0.01" placeholder="Budget sous-besoin MAD" />
+            <button id="addPersonalBtn" class="btn btn-small" type="button">Ajouter</button>
+          </div>
+          <ul id="personalList" class="list"></ul>
+
+          <section id="personalDetail" class="need-detail hidden">
+            <div class="detail-header">
+              <div>
+                <h4>Détails de <span id="detailName"></span></h4>
+                <p class="hint">Ajoute un achat ou une dépense liée à ce besoin.</p>
+              </div>
+              <button id="closePersonalDetail" class="btn btn-small" type="button">Fermer</button>
+            </div>
+            <div class="entry-form detail-form">
+              <input id="detailDescriptionInput" type="text" placeholder="Description (Ex: Starbucks)" />
+              <input id="detailAmountInput" type="number" min="0" step="0.01" placeholder="Montant MAD" />
+              <button id="addDetailBtn" class="btn btn-small" type="button">Ajouter détail</button>
+            </div>
+            <ul id="detailLogList" class="list"></ul>
+          </section>
+        </div>
+      </div>
+
+      <div class="panel" data-panel="charges">
+        <div class="section-card">
+          <h3>Charges</h3>
+          <p class="hint">Ajoute ton loyer, charges fixes et dépenses régulières.</p>
+          <div class="entry-form">
+            <input id="chargesNameInput" type="text" placeholder="Nom charge (Loyer, Eau...)" />
+            <input id="chargesValueInput" type="number" min="0" step="0.01" placeholder="Montant MAD" />
+            <button id="addChargesBtn" class="btn btn-small" type="button">Ajouter</button>
+          </div>
+          <ul id="chargesList" class="list"></ul>
+        </div>
+      </div>
+
+      <div class="panel" data-panel="objectifs">
+        <div class="section-card">
+          <h3>Objectifs</h3>
+          <p class="hint">Planifie tes économies pour atteindre tes projets.</p>
+          <div class="entry-form">
+            <input id="goalNameInput" type="text" placeholder="Objectif (Ex: Nouv. téléphone)" />
+            <input id="goalTargetInput" type="number" min="0" step="0.01" placeholder="Montant cible MAD" />
+            <button id="addGoalBtn" class="btn btn-small" type="button">Ajouter</button>
+          </div>
+          <ul id="goalsList" class="list"></ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="card summary-card glass">
+      <h3>Résumé rapide</h3>
+      <div class="summary">
+        <p><span>Salaire</span><strong id="salaryTotal">0 MAD</strong></p>
+        <p><span>Abonnements</span><strong id="subsSummary">0 MAD</strong></p>
+        <p><span>Besoins</span><strong id="personalSummary">0 MAD</strong></p>
+        <p><span>Charges</span><strong id="chargesSummary">0 MAD</strong></p>
+        <p><span>Objectifs</span><strong id="goalsSummary">0 MAD</strong></p>
+        <p><span>Revenus extra</span><strong id="incomeTotal">0 MAD</strong></p>
+        <p class="row-total"><span>Reste</span><strong id="remaining">0 MAD</strong></p>
+      </div>
+    </section>
+
+    <div class="panel card glass" data-panel="annee" id="yearPanel">
+      <div class="page-header">
+        <div>
+          <p class="page-tag">Vue annuelle</p>
+          <h2>Année</h2>
+        </div>
+        <p class="page-subtitle">Aperçu par mois et totaux annuels.</p>
+      </div>
+      <label class="field-label" for="yearSelect">Sélectionner l'année</label>
+      <select id="yearSelect"></select>
+
+      <div class="year-overview">
+        <table class="year-table" id="yearTable">
+          <thead>
+            <tr>
+              <th>Mois</th>
+              <th>Salaire</th>
+              <th>Revenus extra</th>
+              <th>Abonnements</th>
+              <th>Besoins</th>
+              <th>Charges</th>
+              <th>Objectifs</th>
+              <th>Reste</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+
+        <div class="year-totals">
+          <p><span>Total Salaire</span><strong id="yearSalaryTotal">0 MAD</strong></p>
+          <p><span>Total Revenus extra</span><strong id="yearIncomeTotal">0 MAD</strong></p>
+          <p><span>Total Abonnements</span><strong id="yearSubsTotal">0 MAD</strong></p>
+          <p><span>Total Besoins</span><strong id="yearPersonalTotal">0 MAD</strong></p>
+          <p><span>Total Charges</span><strong id="yearChargesTotal">0 MAD</strong></p>
+          <p class="row-total"><span>Reste Annuel</span><strong id="yearRemaining">0 MAD</strong></p>
+        </div>
+      </div>
+    </div>
+
+    <nav class="bottom-nav" role="tablist" aria-label="Navigation principale">
+      <button class="tab" data-tab="annee" type="button"><span>📅</span><span>Année</span></button>
+      <button class="tab is-active" data-tab="salaire" type="button"><span>💰</span><span>Salaire</span></button>
+      <button class="tab" data-tab="abonnements" type="button"><span>📦</span><span>Abonnements</span></button>
+      <button class="tab" data-tab="besoins" type="button"><span>🛒</span><span>Besoins</span></button>
+      <button class="tab" data-tab="charges" type="button"><span>🏠</span><span>Charges</span></button>
+      <button class="tab" data-tab="objectifs" type="button"><span>🎯</span><span>Objectifs</span></button>
+    </nav>
+  </main>
+
+  <script src="./app.js"></script>
+</body>
+</html>
