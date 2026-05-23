@@ -6,6 +6,7 @@ const tabs = document.querySelectorAll(".tab");
 const panels = document.querySelectorAll(".panel");
 const monthSelect = document.getElementById("monthSelect");
 const monthsPreview = document.getElementById("monthsPreview");
+const closeMonthBtn = document.getElementById("closeMonthBtn");
 
 const salaryInput = document.getElementById("salaryInput");
 const incomeInput = document.getElementById("incomeInput");
@@ -127,7 +128,8 @@ const monthDefaults = {
   subsItems: [],
   personalBudget: 0,
   personalItems: createDefaultPersonalItems(),
-  chargesItems: []
+  chargesItems: [],
+  closed: false
 };
 
 let deferredPrompt = null;
@@ -191,6 +193,7 @@ function sanitizeMonthData(data) {
   clean.personalBudget = toNumber(data.personalBudget);
   clean.personalItems = mergePersonalItems(data.personalItems);
   clean.chargesItems = normalizeItemsWithId(data.chargesItems, "charge");
+  clean.closed = Boolean(data.closed);
   return clean;
 }
 
@@ -284,10 +287,14 @@ function getCurrentMonthData() {
   return store.monthsData[store.activeMonth];
 }
 
-function createItemElement(item, onRemove, groupKey) {
+function createItemElement(item, onRemove, groupKey, disabled = false) {
   const li = document.createElement("li");
 
   if (groupKey === "chargesItems") {
+    const spent = toNumber(item.spent);
+    const remaining = Math.max(0, toNumber(item.amount) - spent);
+    const logs = Array.isArray(item.logs) ? item.logs : [];
+
     li.className = "goal-item";
     const top = document.createElement("div");
     top.className = "goal-top";
@@ -295,9 +302,16 @@ function createItemElement(item, onRemove, groupKey) {
     title.textContent = item.name;
     const status = document.createElement("span");
     status.className = "goal-meta";
-    status.textContent = toMoney(item.amount);
+    status.textContent = `${toMoney(spent)} / ${toMoney(item.amount)} · Reste ${toMoney(remaining)}`;
     top.appendChild(title);
     top.appendChild(status);
+
+    if (logs.length > 0) {
+      const logInfo = document.createElement("span");
+      logInfo.className = "goal-meta";
+      logInfo.textContent = `${logs.length} détail(s)`;
+      top.appendChild(logInfo);
+    }
 
     const actions = document.createElement("div");
     actions.className = "goal-actions";
@@ -308,15 +322,56 @@ function createItemElement(item, onRemove, groupKey) {
     editInput.step = "0.01";
     editInput.value = item.amount;
     editInput.className = "edit-amount-input";
+    editInput.disabled = disabled;
 
     const saveBtn = document.createElement("button");
     saveBtn.type = "button";
     saveBtn.className = "btn btn-small";
     saveBtn.textContent = "Modifier";
+    saveBtn.disabled = disabled;
     saveBtn.addEventListener("click", () => {
+      if (disabled) return;
       const newVal = toNumber(editInput.value);
       if (newVal <= 0) return;
+      if (newVal < spent) {
+        alert("Le nouveau montant doit être supérieur ou égal à ce qui a déjà été consommé.");
+        return;
+      }
       item.amount = newVal;
+      saveStore();
+      renderAll();
+    });
+
+    const detailInput = document.createElement("input");
+    detailInput.type = "text";
+    detailInput.placeholder = "Description";
+    detailInput.disabled = disabled;
+    detailInput.className = "edit-amount-input";
+
+    const consumeInput = document.createElement("input");
+    consumeInput.type = "number";
+    consumeInput.min = "0";
+    consumeInput.step = "0.01";
+    consumeInput.placeholder = "Consommation MAD";
+    consumeInput.disabled = disabled;
+    consumeInput.className = "edit-amount-input";
+
+    const consumeBtn = document.createElement("button");
+    consumeBtn.type = "button";
+    consumeBtn.className = "btn btn-small";
+    consumeBtn.textContent = "Consommer";
+    consumeBtn.disabled = disabled || spent >= item.amount;
+    consumeBtn.addEventListener("click", () => {
+      if (disabled) return;
+      const amount = toNumber(consumeInput.value);
+      if (amount <= 0) return;
+      if (spent + amount > item.amount) {
+        alert("Montant dépasse le budget de cette charge.");
+        return;
+      }
+      item.spent = spent + amount;
+      item.logs = logs;
+      item.logs.push({ description: detailInput.value.trim() || "Dépense", amount, month: store.activeMonth });
       saveStore();
       renderAll();
     });
@@ -324,11 +379,15 @@ function createItemElement(item, onRemove, groupKey) {
     const removeBtn = document.createElement("button");
     removeBtn.type = "button";
     removeBtn.className = "remove-btn";
+    removeBtn.disabled = disabled;
     removeBtn.textContent = "Supprimer";
     removeBtn.addEventListener("click", onRemove);
 
     actions.appendChild(editInput);
     actions.appendChild(saveBtn);
+    actions.appendChild(detailInput);
+    actions.appendChild(consumeInput);
+    actions.appendChild(consumeBtn);
     actions.appendChild(removeBtn);
 
     li.appendChild(top);
@@ -343,8 +402,7 @@ function createItemElement(item, onRemove, groupKey) {
   name.className = "entry-name";
   amount.className = "entry-amount";
   removeBtn.className = "remove-btn";
-  name.textContent = item.name;
-  amount.textContent = toMoney(item.amount);
+    removeBtn.disabled = disabled;
   removeBtn.textContent = "Supprimer";
   removeBtn.type = "button";
   removeBtn.addEventListener("click", onRemove);
@@ -357,18 +415,21 @@ function createItemElement(item, onRemove, groupKey) {
 
 function renderItems(listEl, items, groupKey) {
   const month = getCurrentMonthData();
+  const disabled = month.closed;
   listEl.innerHTML = "";
   items.forEach((item, index) => {
     listEl.appendChild(createItemElement(item, () => {
+      if (disabled) return;
       month[groupKey].splice(index, 1);
       saveStore();
       renderAll();
-    }, groupKey));
+    }, groupKey, disabled));
   });
 }
 
 function renderPersonalItems() {
   const month = getCurrentMonthData();
+  const disabled = month.closed;
   personalList.innerHTML = "";
 
   month.personalItems.forEach((item, index) => {
@@ -382,7 +443,8 @@ function renderPersonalItems() {
     title.textContent = item.name;
     const status = document.createElement("span");
     status.className = "goal-meta";
-    status.textContent = `${toMoney(item.spent)} / ${toMoney(item.budget)}`;
+    const remainingNeed = Math.max(0, toNumber(item.budget) - toNumber(item.spent));
+    status.textContent = `${toMoney(item.spent)} / ${toMoney(item.budget)} · Reste ${toMoney(remainingNeed)}`;
     top.appendChild(title);
     top.appendChild(status);
 
@@ -400,20 +462,26 @@ function renderPersonalItems() {
     detailBtn.type = "button";
     detailBtn.className = "btn btn-small";
     detailBtn.textContent = "Détails";
-    detailBtn.addEventListener("click", () => openPersonalDetail(item.id));
+    detailBtn.disabled = disabled;
+    detailBtn.addEventListener("click", () => {
+      if (disabled) return;
+      openPersonalDetail(item.id);
+    });
 
     const consumeInput = document.createElement("input");
     consumeInput.type = "number";
     consumeInput.min = "0";
     consumeInput.step = "0.01";
     consumeInput.placeholder = "Consommation MAD";
+    consumeInput.disabled = disabled;
 
     const consumeBtn = document.createElement("button");
     consumeBtn.type = "button";
     consumeBtn.className = "btn btn-small";
     consumeBtn.textContent = "Consommer";
-    consumeBtn.disabled = item.spent >= item.budget;
+    consumeBtn.disabled = disabled || item.spent >= item.budget;
     consumeBtn.addEventListener("click", () => {
+      if (disabled) return;
       const amount = toNumber(consumeInput.value);
       if (amount <= 0) return;
       if (item.spent + amount > item.budget) {
@@ -432,12 +500,15 @@ function renderPersonalItems() {
     editBudgetInput.min = "0";
     editBudgetInput.step = "0.01";
     editBudgetInput.value = item.budget;
+    editBudgetInput.disabled = disabled;
 
     const editBudgetBtn = document.createElement("button");
     editBudgetBtn.type = "button";
     editBudgetBtn.className = "btn btn-small";
     editBudgetBtn.textContent = "Budget";
+    editBudgetBtn.disabled = disabled;
     editBudgetBtn.addEventListener("click", () => {
+      if (disabled) return;
       const newBudget = toNumber(editBudgetInput.value);
       if (newBudget < 0) return;
       if (newBudget < item.spent) {
@@ -452,8 +523,10 @@ function renderPersonalItems() {
     const removeBtn = document.createElement("button");
     removeBtn.type = "button";
     removeBtn.className = "remove-btn";
+    removeBtn.disabled = disabled;
     removeBtn.textContent = "Supprimer";
     removeBtn.addEventListener("click", () => {
+      if (disabled) return;
       month.personalItems.splice(index, 1);
       if (selectedPersonalNeedId === item.id) {
         selectedPersonalNeedId = null;
@@ -554,6 +627,10 @@ function closePersonalDetailView() {
 }
 
 function addPersonalDetail() {
+  if (isCurrentMonthClosed()) {
+    alert("Ce mois est clôturé. Réouvrez-le pour modifier.");
+    return;
+  }
   const item = getSelectedPersonalNeed();
   if (!item) return;
   const description = detailDescriptionInput.value.trim();
@@ -745,7 +822,7 @@ function renderYearOverview(year) {
 
     const tr = document.createElement("tr");
     const monthNameTd = document.createElement("td");
-    monthNameTd.textContent = monthLabel(monthKey);
+    monthNameTd.textContent = `${monthLabel(monthKey)}${m.closed ? " 🔒" : ""}`;
     tr.appendChild(monthNameTd);
     [salary, income, subs, personal, charges, goals, remainingVal].forEach((v) => {
       const td = document.createElement("td");
@@ -771,6 +848,104 @@ function renderYearOverview(year) {
   yearRemaining.textContent = toMoney(totals.remaining);
 }
 
+function getNextMonthKey(monthKey) {
+  const index = monthKeys.indexOf(monthKey);
+  if (index === -1 || index >= monthKeys.length - 1) return null;
+  return monthKeys[index + 1];
+}
+
+function applyRolloverGroupToNextMonth(monthKey, groupKey, amountKey) {
+  const nextMonthKey = getNextMonthKey(monthKey);
+  if (!nextMonthKey) return;
+  ensureMonth(nextMonthKey);
+  const sourceMonth = store.monthsData[monthKey];
+  const targetMonth = store.monthsData[nextMonthKey];
+
+  sourceMonth[groupKey].forEach((sourceItem) => {
+    const remaining = Math.max(0, toNumber(sourceItem[amountKey]) - toNumber(sourceItem.spent));
+    if (remaining <= 0) return;
+
+    const existing = targetMonth[groupKey].find((item) => item.name === sourceItem.name);
+    const rolloverEntry = {
+      sourceMonth: monthKey,
+      sourceName: sourceItem.name,
+      amount: remaining
+    };
+
+    if (existing) {
+      existing[amountKey] = toNumber(existing[amountKey]) + remaining;
+      existing.rollovers = Array.isArray(existing.rollovers) ? existing.rollovers : [];
+      const previous = existing.rollovers.find((r) => r.sourceMonth === monthKey && r.sourceName === sourceItem.name);
+      if (previous) {
+        previous.amount = remaining;
+      } else {
+        existing.rollovers.push(rolloverEntry);
+      }
+    } else {
+      targetMonth[groupKey].push({
+        id: generateId(groupKey === "chargesItems" ? "charge" : "need"),
+        name: sourceItem.name,
+        [amountKey]: remaining,
+        spent: 0,
+        logs: [],
+        rollovers: [rolloverEntry]
+      });
+    }
+  });
+}
+
+function removeRolloverGroupFromNextMonth(monthKey, groupKey, amountKey) {
+  const nextMonthKey = getNextMonthKey(monthKey);
+  if (!nextMonthKey) return;
+  ensureMonth(nextMonthKey);
+  const month = store.monthsData[nextMonthKey];
+  month[groupKey] = month[groupKey].reduce((items, item) => {
+    const rollovers = Array.isArray(item.rollovers) ? item.rollovers.filter((r) => r.sourceMonth !== monthKey) : [];
+    const removedAmount = Array.isArray(item.rollovers)
+      ? item.rollovers.filter((r) => r.sourceMonth === monthKey).reduce((acc, r) => acc + toNumber(r.amount), 0)
+      : 0;
+    const newAmount = Math.max(0, toNumber(item[amountKey]) - removedAmount);
+    if (newAmount === 0 && toNumber(item.spent) === 0 && rollovers.length === 0) {
+      return items;
+    }
+    items.push({
+      ...item,
+      [amountKey]: newAmount,
+      rollovers: rollovers.length > 0 ? rollovers : undefined
+    });
+    return items;
+  }, []);
+}
+
+function applyRolloverToNextMonth(monthKey) {
+  applyRolloverGroupToNextMonth(monthKey, "personalItems", "budget");
+  applyRolloverGroupToNextMonth(monthKey, "chargesItems", "amount");
+}
+
+function removeRolloverFromNextMonth(monthKey) {
+  removeRolloverGroupFromNextMonth(monthKey, "personalItems", "budget");
+  removeRolloverGroupFromNextMonth(monthKey, "chargesItems", "amount");
+}
+
+function setMonthClosed(monthKey, closed) {
+  ensureMonth(monthKey);
+  const month = store.monthsData[monthKey];
+  if (month.closed === closed) return;
+  month.closed = Boolean(closed);
+  if (closed) {
+    applyRolloverToNextMonth(monthKey);
+  } else {
+    removeRolloverFromNextMonth(monthKey);
+  }
+  saveStore();
+  renderAll();
+}
+
+function toggleCloseActiveMonth() {
+  const monthKey = store.activeMonth;
+  setMonthClosed(monthKey, !getCurrentMonthData().closed);
+}
+
 function renderAll() {
   const month = getCurrentMonthData();
   const salary = toNumber(month.salary);
@@ -786,6 +961,8 @@ function renderAll() {
   incomeInput.value = month.income;
   personalBudgetInput.value = month.personalBudget;
   monthSelect.value = store.activeMonth;
+  closeMonthBtn.textContent = month.closed ? "🔓 Réouvrir" : "🔒 Clôturer";
+  closeMonthBtn.title = month.closed ? "Réouvrir ce mois" : "Clôturer ce mois";
 
   salaryTotal.textContent = toMoney(salary);
   subsSummary.textContent = toMoney(totalSubs);
@@ -798,6 +975,26 @@ function renderAll() {
   personalUnallocated.textContent = toMoney(totalPersonalBudget - totalPersonalAllocated);
   personalAlert.hidden = totalPersonalAllocated <= totalPersonalBudget;
 
+  const monthClosed = month.closed;
+  salaryInput.disabled = monthClosed;
+  incomeInput.disabled = monthClosed;
+  personalBudgetInput.disabled = monthClosed;
+  subsNameInput.disabled = monthClosed;
+  subsValueInput.disabled = monthClosed;
+  addSubsBtn.disabled = monthClosed;
+  personalNameInput.disabled = monthClosed;
+  personalValueInput.disabled = monthClosed;
+  addPersonalBtn.disabled = monthClosed;
+  chargesNameInput.disabled = monthClosed;
+  chargesValueInput.disabled = monthClosed;
+  addChargesBtn.disabled = monthClosed;
+  goalNameInput.disabled = monthClosed;
+  goalTargetInput.disabled = monthClosed;
+  addGoalBtn.disabled = monthClosed;
+  detailDescriptionInput.disabled = monthClosed;
+  detailAmountInput.disabled = monthClosed;
+  addDetailBtn.disabled = monthClosed;
+
   renderItems(subsList, month.subsItems, "subsItems");
   renderPersonalItems();
   renderPersonalDetail();
@@ -807,6 +1004,10 @@ function renderAll() {
 }
 
 function addItem(nameInput, valueInput, groupKey) {
+  if (isCurrentMonthClosed()) {
+    alert("Ce mois est clôturé. Réouvrez-le pour modifier.");
+    return;
+  }
   const month = getCurrentMonthData();
   const name = nameInput.value.trim();
   const amount = toNumber(valueInput.value);
@@ -815,6 +1016,8 @@ function addItem(nameInput, valueInput, groupKey) {
   const entry = { name, amount };
   if (groupKey === "chargesItems") {
     entry.id = generateId("charge");
+    entry.spent = 0;
+    entry.logs = [];
     month[groupKey].push(entry);
   } else {
     month[groupKey].push(entry);
@@ -901,6 +1104,10 @@ function replicateChargesToAllMonths(charge) {
 }
 
 function addPersonalNeed() {
+  if (isCurrentMonthClosed()) {
+    alert("Ce mois est clôturé. Réouvrez-le pour modifier.");
+    return;
+  }
   const month = getCurrentMonthData();
   const name = personalNameInput.value.trim();
   const budget = toNumber(personalValueInput.value);
@@ -920,6 +1127,10 @@ function addPersonalNeed() {
 }
 
 function addGoal() {
+  if (isCurrentMonthClosed()) {
+    alert("Ce mois est clôturé. Réouvrez-le pour modifier.");
+    return;
+  }
   const name = goalNameInput.value.trim();
   const target = toNumber(goalTargetInput.value);
   if (!name || target <= 0) return;
@@ -977,8 +1188,14 @@ function populateMonthSelect() {
 
 tabs.forEach((tab) => tab.addEventListener("click", () => setActiveTab(tab.dataset.tab)));
 monthSelect.addEventListener("change", (event) => setMonth(event.target.value));
+closeMonthBtn?.addEventListener("click", toggleCloseActiveMonth);
+
+function isCurrentMonthClosed() {
+  return getCurrentMonthData().closed;
+}
 
 salaryInput.addEventListener("input", (event) => {
+  if (isCurrentMonthClosed()) return;
   const month = getCurrentMonthData();
   month.salary = toNumber(event.target.value);
   saveStore();
@@ -986,6 +1203,7 @@ salaryInput.addEventListener("input", (event) => {
 });
 
 incomeInput.addEventListener("input", (event) => {
+  if (isCurrentMonthClosed()) return;
   const month = getCurrentMonthData();
   month.income = toNumber(event.target.value);
   saveStore();
@@ -993,6 +1211,7 @@ incomeInput.addEventListener("input", (event) => {
 });
 
 personalBudgetInput.addEventListener("input", (event) => {
+  if (isCurrentMonthClosed()) return;
   const month = getCurrentMonthData();
   month.personalBudget = toNumber(event.target.value);
   saveStore();
